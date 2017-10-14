@@ -1,7 +1,7 @@
 {
   "name": "SocketCore.Client.JavaScript",
-  "description": "",
-  "main": "",
+  "description": "Javascript client for SocketCore to add real-time functionality in your web apps",
+  "main": "SocketCore.js",
   "license": "MIT",
   "homepage": "",
   "ignore": [
@@ -10,5 +10,12 @@
     "bower_components",
     "test",
     "tests"
-  ]
+  ],
+  "authors": [
+    { "name": "Janusz Noszczyński", "email": "janusz.noszczynski@gmail.com" }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/janusznoszczynski/SocketCore.Client.JavaScript.git"
+  }
 }

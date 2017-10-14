@@ -1,5 +1,5 @@
 {
-  "name": "SocketCore.Client.JavaScript",
+  "name": "socketcore-client-javascript",
   "description": "Javascript client for SocketCore to add real-time functionality in your web apps",
   "main": "SocketCore.js",
   "license": "MIT",

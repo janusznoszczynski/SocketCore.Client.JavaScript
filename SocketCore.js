@@ -51,7 +51,7 @@ var socketCore = (function (window) {
     }
 
 
-    function coreConnection(urlOrPath) {
+    function connection(urlOrPath) {
         this.url = prepareUrl(urlOrPath);
         this.webSocket = null;
         this.connectionId = null;
@@ -67,7 +67,7 @@ var socketCore = (function (window) {
         this.errorEvt = new socketEvent();
     }
 
-    coreConnection.prototype = {
+    connection.prototype = {
         opening: function (handler) {
             this.openingEvt.subscribe(handler);
         },
@@ -205,6 +205,6 @@ var socketCore = (function (window) {
 
     return {
         connectionState: connectionState,
-        coreConnection: coreConnection
+        connection: connection
     };
 })(window);

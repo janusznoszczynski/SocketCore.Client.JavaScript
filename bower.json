@@ -1,8 +1,9 @@
 {
   "name": "socketcore-client-javascript",
+  "version": "1.0.1",
   "description": "Javascript client for SocketCore to add real-time functionality in your web apps",
   "license": "MIT",
-  "homepage": "",
+  "homepage": "https://github.com/janusznoszczynski/SocketCore.Client.JavaScript",
   "ignore": [
     "**/.*",
     "node_modules",

@@ -5,13 +5,56 @@
 var socketCore = (function (window) {
     "use strict";
 
+    function createCookie(name, value, days) {
+        var expires = "";
+        if (days) {
+            var date = new Date();
+            date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+            expires = "; expires=" + date.toUTCString();
+        }
+        document.cookie = name + "=" + value + expires + "; path=/";
+    }
+
+    function readCookie(name) {
+        var nameEQ = name + "=";
+        var ca = document.cookie.split(';');
+        for (var i = 0; i < ca.length; i++) {
+            var c = ca[i];
+            while (c.charAt(0) == ' ') c = c.substring(1, c.length);
+            if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+        }
+        return null;
+    }
+
+    function eraseCookie(name) {
+        createCookie(name, "", -1);
+    }
+
+    function guid() {
+        function s4() {
+            return Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
+        }
+
+        return s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
+    }
+
+    function prepareUrl(urlOrPath) {
+        if (urlOrPath.indexOf("ws://") !== -1) {
+            return urlOrPath;
+        }
+
+        var url = "ws://" + location.host + urlOrPath;
+        return url;
+    }
+
+
+
     var connectionState = {
         opening: 0,
         opened: 1,
         reopening: 2,
         closed: 3
     };
-
 
     function socketEvent() {
         this.handlers = [];
@@ -38,16 +81,6 @@ var socketCore = (function (window) {
                 item.call(scope, o);
             });
         }
-    }
-
-
-    function prepareUrl(urlOrPath) {
-        if (urlOrPath.indexOf("ws://") !== -1) {
-            return urlOrPath;
-        }
-
-        var url = "ws://" + location.host + urlOrPath;
-        return url;
     }
 
 
@@ -138,14 +171,14 @@ var socketCore = (function (window) {
             };
 
             self.webSocket.onmessage = function (evt) {
-                var message = JSON.parse(evt.data);
+                var cmd = JSON.parse(evt.data);
 
-                if (message.Type === "SetConnectionId") {
-                    self.connectionId = message.Data;
+                if (cmd.Type === "SetConnectionId") {
+                    self.connectionId = cmd.Data;
                     self.fireStateChanged(connectionState.opened);
                 }
-                else if (message.Type === "Data") {
-                    self.recievedEvt.fire(message.Data, self);
+                else if (cmd.Type === "Data") {
+                    self.recievedEvt.fire(cmd.Data, self);
                 }
             };
 
@@ -167,8 +200,8 @@ var socketCore = (function (window) {
             };
 
             if (self.webSocket.readyState === WebSocket.OPEN) {
-                var message = { Type: "Data", Data: data };
-                self.webSocket.send(JSON.stringify(message));
+                var cmd = { Type: "Data", Data: data };
+                self.webSocket.send(JSON.stringify(cmd));
                 self.sentEvt.fire(data, self);
             }
             else if (self.webSocket.readyState === WebSocket.opening) {
@@ -203,8 +236,170 @@ var socketCore = (function (window) {
     }
 
 
+    function workflowClient(urlOrPath, options) {
+        var self = this;
+
+        options = options || {};
+
+        options.contextHeader = options.contextHeader || function () { return window.location.hash.replace("#", ""); };
+        options.contextHeaderEnabled = options.contextHeaderEnabled === undefined ? true : options.contextHeaderEnabled;
+
+        function generateSessionId() {
+            var sessionId = readCookie("SocketCore.SessionId");
+
+            if (!sessionId) {
+                sessionId = guid();
+                createCookie("SocketCore.SessionId", sessionId);
+            }
+
+            return sessionId;
+        }
+
+        this.connection = new socketCore.connection(urlOrPath);
+        this.sessionId = options.sessionId || generateSessionId();
+        this.senderId = options.senderId || "WebClient";
+        this.handlers = [];
+        this.handlersWorkflowsEvents = [];
+        this.options = options;
+
+        this.connection.opening(function () {
+            //todo: opening message class
+            self.dispatchWorkflowsEventsMessage(new socketCore.message("SocketCore.WokrflowEvents", "Opening"), self);
+        });
+
+        this.connection.reopening(function () {
+            //todo: reopening message class
+            self.dispatchWorkflowsEventsMessage(new socketCore.message("SocketCore.WokrflowEvents", "Reopening", this.connection.connectionId), self);
+        });
+
+        this.connection.closed(function () {
+            //todo: closed message class
+            self.dispatchWorkflowsEventsMessage(new socketCore.message("SocketCore.WokrflowEvents", "Closed", this.connection.connectionId), self);
+        });
+
+        this.connection.stateChanged(function (state) {
+            //todo: stateChanged message class
+            self.dispatchWorkflowsEventsMessage(new socketCore.message("SocketCore.WokrflowEvents", "StateChanged", state), self);
+        });
+
+        this.connection.recieved(function (data) {
+            self.dispatchMessage(data, self);
+        });
+
+        this.connection.sent(function (data) {
+            //todo: sent message class
+            self.dispatchWorkflowsEventsMessage(new socketCore.message("SocketCore.WokrflowEvents", "Sent", data), self);
+        });
+
+        this.connection.error(function (evt) {
+            //todo: error message class
+            self.dispatchWorkflowsEventsMessage(new socketCore.message("SocketCore.WokrflowEvents", "Error", evt), self);
+        });
+    }
+
+    workflowClient.prototype = {
+        run: function (handler) {
+            this.connection.opened(handler);
+            this.connection.open();
+        },
+
+        send: function (channel, message) {
+            var options = this.options;
+
+            if (!message.messageId) {
+                message.messageId = guid();
+            }
+
+            message.connectionId = this.connection.connectionId;
+            message.senderId = this.senderId;
+            message.sessionId = this.sessionId;
+
+            if (!Array.isArray(message.headers)) {
+                message.headers = [];
+            }
+
+            if (options.contextHeaderEnabled) {
+                message.headers.push({ Name: "Context", Value: options.contextHeader() });
+            }
+
+            this.connection.send({
+                Channel: channel,
+                Message: message
+            });
+        },
+
+        subscribe: function (fn) {
+            this.handlers.push(fn);
+        },
+
+        unsubscribe: function (fn) {
+            this.handlers = this.handlers.filter(
+                function (item) {
+                    if (item !== fn) {
+                        return item;
+                    }
+                }
+            );
+        },
+
+        dispatchMessage: function (data, thisObj) {
+            this.handlers.forEach(function (item) {
+                var message = new socketCore.message(data.Namespace, data.Type, data.Data, data.Headers); // copy of the message
+                item.call(thisObj, message);
+            });
+        },
+
+        subscribeWorkflowsEventsChannel: function (fn) {
+            this.handlersWorkflowsEvents.push(fn);
+        },
+
+        unsubscribeWorkflowsEventsChannel: function (fn) {
+            this.handlersWorkflowsEvents = this.handlersWorkflowsEvents.filter(
+                function (item) {
+                    if (item !== fn) {
+                        return item;
+                    }
+                }
+            );
+        },
+
+        dispatchWorkflowsEventsMessage: function (msg, thisObj) {
+            this.handlersWorkflowsEvents.forEach(function (item) {
+                var message = msg.clone(); // copy of the message
+                item.call(thisObj, message);
+            });
+        },
+    }
+
+
+    function message(ns, type, data, headers) {
+        this.namespace = ns;
+        this.type = type;
+        this.data = data;
+        this.headers = headers || [];
+
+        this.messageId = null;
+        this.connectionId = null;
+        this.sessionId = null;
+        this.senderId = null;
+        this.replyToMessageId = null;
+    }
+
+    message.prototype = {
+        isMatch: function (ns, type) {
+            return this.namespace === ns && this.type === type;
+        },
+
+        clone: function () {
+            return JSON.parse(JSON.stringify(this));
+        }
+    }
+
+
     return {
         connectionState: connectionState,
-        connection: connection
+        connection: connection,
+        workflowClient: workflowClient,
+        message: message
     };
 })(window);
